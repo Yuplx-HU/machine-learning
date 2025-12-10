@@ -1,8 +1,15 @@
+import os
 import random
+import joblib
 import numpy as np
-from sklearn.base import clone
+import pandas as pd
+from typing import Tuple
+
+from sklearn.base import clone, BaseEstimator
 from sklearn.svm import SVR, SVC
+from sklearn.feature_selection import SelectKBest, f_regression, mutual_info_classif
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, KFold, StratifiedKFold
+from sklearn.neural_network import MLPRegressor, MLPClassifier
 from sklearn.ensemble import (
     RandomForestRegressor, RandomForestClassifier,
     ExtraTreesRegressor, ExtraTreesClassifier,
@@ -25,6 +32,7 @@ def create_estimator(task_type: str, model_type: str, **fixed_model_params):
             "ert": ExtraTreesRegressor, 
             "gbdt": GradientBoostingRegressor,
             "svm": SVR,
+            "mlp": MLPRegressor,
             "vote": VotingRegressor,
             "adaboost": AdaBoostRegressor,
             "stack": StackingRegressor,
@@ -34,6 +42,7 @@ def create_estimator(task_type: str, model_type: str, **fixed_model_params):
             "ert": ExtraTreesClassifier,
             "gbdt": GradientBoostingClassifier, 
             "svm": SVC,
+            "mlp": MLPClassifier,
             "vote": VotingClassifier,
             "adaboost": AdaBoostClassifier,
             "stack": StackingClassifier,
@@ -86,7 +95,7 @@ def create_searcher(
         raise ValueError(f"Unsupported search type '{search_type}'. Use: grid/random")
 
 
-def train_model(task_type: str, searcher, X_train, y_train, X_test, y_test):
+def train_models(task_type: str, searchers: Tuple[str, BaseEstimator], X_train, y_train, X_test, y_test, **kwargs):
     metric_funcs = {
         "regression": {
             "rmse": lambda yt, yp: round(root_mean_squared_error(yt, yp), 4),
@@ -100,16 +109,63 @@ def train_model(task_type: str, searcher, X_train, y_train, X_test, y_test):
         }
     }
     
-    searcher_clone = clone(searcher)
-    searcher_clone.fit(X_train, y_train)
-    y_pred = searcher_clone.predict(X_test)
+    random_state = kwargs.get("random_state", random.randint(0, 4294967296))
     
-    return {
-        "best_estimator": searcher_clone.best_estimator_,
-        "best_parameters": searcher_clone.best_params_,
-        "prediction": y_pred,
-        "metrics": {name: func(y_test, y_pred) for name, func in metric_funcs[task_type].items()}
-    }
+    if "k_features" in kwargs:
+        if task_type == 'classification':
+            score_func = lambda X, y: mutual_info_classif(X, y, random_state=random_state)
+        else:
+            score_func = f_regression
+
+        selector = SelectKBest(score_func=score_func, k=kwargs["k_features"])
+        X_train_to_use = selector.fit_transform(X_train, y_train)
+        X_test_to_use = selector.transform(X_test)
+        # selected_features_indices = selector.get_support(indices=True)
+    else:
+        X_train_to_use = X_train
+        X_test_to_use = X_test
+        # selected_features_indices = None
+    
+    results = []
+    
+    for searcher_name, searcher in searchers:
+        searcher_clone = clone(searcher)
+        searcher_clone.fit(X_train_to_use, y_train)
+        y_pred = searcher_clone.predict(X_test_to_use)
+
+        results.append({
+            "name": searcher_name,
+            "best_estimator": searcher_clone.best_estimator_,
+            "best_parameters": searcher_clone.best_params_,
+            "prediction": y_pred,
+            "metrics": {name: func(y_test, y_pred) for name, func in metric_funcs[task_type].items()}
+        })
+        
+    sorted_key = 'f1' if task_type == "classification" else 'rmse'
+    ascending = False if sorted_key == "rmse" else True
+    results = sorted(results, key = lambda result: result["metrics"][sorted_key], reverse=ascending)
+    
+    save_results_path = kwargs.get("save_results_path")
+    if save_results_path:
+        os.makedirs(os.path.dirname(save_results_path), exist_ok=True)
+        pd.DataFrame([{
+            "name": result["name"],
+            "best_parameters": result["best_parameters"],
+            **result["metrics"]
+        } for result in results]).to_csv(save_results_path, index=False)
+    
+    save_models_dir = kwargs.get("save_models_dir")
+    save_best_model = kwargs.get("save_best_model")
+    if save_models_dir:
+        os.makedirs(os.path.dirname(save_models_dir), exist_ok=True)
+        if save_best_model:
+            joblib.dump(results[0]["best_estimator"], os.path.join(save_models_dir, f"{results[0]['name']}.joblib"))
+        else:
+            for result in results:
+                joblib.dump(result["best_estimator"], os.path.join(save_models_dir, f"{result['name']}.joblib"))
+    
+    
+    return results
 
 
 def rf_parameters(task_type: str, search_type: str, random_state: int = None):
@@ -184,12 +240,12 @@ def gbdt_parameters(task_type: str, search_type: str, random_state: int = None):
     
     search_model_params = {
         'n_estimators': np.arange(100, 1001, 50).tolist(),
-        'learning_rate': loguniform(1e-3, 0.1).rvs(7, random_state=random_state).tolist(),
         'max_depth': np.arange(2, 9, 1).tolist(),
         'min_samples_split': np.arange(2, 21, 1).tolist(),
         'min_samples_leaf': np.arange(1, 11, 1).tolist(),
         'subsample': np.linspace(0.5, 1.0, 6).tolist(),
-        'max_features': ['sqrt', None] + np.linspace(0.3, 0.9, 7).tolist()
+        'max_features': ['sqrt', None] + np.linspace(0.3, 0.9, 7).tolist(),
+        'learning_rate': loguniform(1e-3, 0.1).rvs(7, random_state=random_state).tolist(),
     }
     
     searcher_params = {
@@ -211,10 +267,11 @@ def svm_parameters(task_type: str, search_type: str, random_state: int = None):
     
     fixed_model_params = {
         'max_iter': 10000,
-        'cache_size': 800,
-        'decision_function_shape': 'ovr',
-        'random_state': random_state
+        'cache_size': 1000,
     }
+    if task_type == "classification":
+        fixed_model_params["random_state"] = random_state
+        fixed_model_params["decision_function_shape"] = 'ovr'
     
     search_model_params = {
         'C': loguniform(1e-4, 1e4).rvs(10, random_state=random_state).tolist(),
@@ -232,6 +289,36 @@ def svm_parameters(task_type: str, search_type: str, random_state: int = None):
         "n_jobs": -1,
         "verbose": 3,
         'n_iter': 150
+    }
+    if search_type == "random":
+        searcher_params['random_state'] = random_state
+    
+    return fixed_model_params, search_model_params, searcher_params
+
+
+def mlp_parameters(task_type: str, search_type: str, random_state: int = None):
+    if random_state is None:
+        random_state = random.randint(0, 4294967296)
+    
+    fixed_model_params = {
+        'max_iter': 10000,
+        'random_state': random_state
+    }
+    
+    search_model_params = {
+        'hidden_layer_sizes': [(32,), (64,), (128,), (256,), (64, 32), (128, 64), (256, 128)],
+        'activation': ['identity', 'logistic', 'tanh', 'relu'],
+        'solver': ['lbfgs', 'sgd', 'adam'],
+        'alpha': loguniform(1e-4, 1e-1).rvs(6, random_state=random_state).tolist(),
+        'learning_rate': ['constant', 'invscaling', 'adaptive'],
+    }
+    
+    searcher_params = {
+        "cv": create_cv(task_type, random_state),
+        "scoring": create_scorer(task_type, "f1" if task_type == "classification" else "rmse"),
+        "n_jobs": -1,
+        "verbose": 3,
+        'n_iter': 100
     }
     if search_type == "random":
         searcher_params['random_state'] = random_state
