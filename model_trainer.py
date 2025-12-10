@@ -71,22 +71,15 @@ def create_scorer(task_type: str, scorer_type: str):
     return scorer_map[task_type][scorer_type]
 
 
-def create_cv(task_type: str, random_state: int = None):
-    if random_state is None:
-        random_state = random.randint(0, 4294967296)
-
+def create_cv(task_type: str, random_state: int = random.randint(0, 4294967296)):
     if task_type == "classification":
         return StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
     else:
         return KFold(n_splits=5, shuffle=True, random_state=random_state)
 
 
-def create_searcher(
-    search_type: str,
-    estimator,
-    search_model_params: dict = {},
-    searcher_params: dict = {}
-):
+def create_searcher(search_type: str, estimator: BaseEstimator,
+                    search_model_params: dict = {}, searcher_params: dict = {}):
     if search_type == "grid":
         return GridSearchCV(param_grid=search_model_params, estimator=estimator, **searcher_params)
     elif search_type == "random":
@@ -95,7 +88,14 @@ def create_searcher(
         raise ValueError(f"Unsupported search type '{search_type}'. Use: grid/random")
 
 
-def train_models(task_type: str, searchers: Tuple[str, BaseEstimator], X_train, y_train, X_test, y_test, **kwargs):
+def train_models(task_type: str, searchers: Tuple[str, BaseEstimator],
+                 X_train: pd.DataFrame, y_train: pd.DataFrame, X_test: pd.DataFrame, y_test: pd.DataFrame,
+                 # Feature selection.
+                 k_features: int = 0, random_state: int = random.randint(0, 4294967296),
+                 # Model train results.
+                 save_results: bool = False, save_results_dir: str = "output/models/",
+                 # Trained models.
+                 save_models: bool = False, save_best_model: bool = False, save_models_dir: str = "output/models/"):
     metric_funcs = {
         "regression": {
             "rmse": lambda yt, yp: round(root_mean_squared_error(yt, yp), 4),
@@ -109,15 +109,13 @@ def train_models(task_type: str, searchers: Tuple[str, BaseEstimator], X_train, 
         }
     }
     
-    random_state = kwargs.get("random_state", random.randint(0, 4294967296))
-    
-    if "k_features" in kwargs:
+    if k_features > 0:
         if task_type == 'classification':
             score_func = lambda X, y: mutual_info_classif(X, y, random_state=random_state)
         else:
             score_func = f_regression
 
-        selector = SelectKBest(score_func=score_func, k=kwargs["k_features"])
+        selector = SelectKBest(score_func=score_func, k=k_features)
         X_train_to_use = selector.fit_transform(X_train, y_train)
         X_test_to_use = selector.transform(X_test)
         # selected_features_indices = selector.get_support(indices=True)
@@ -145,18 +143,15 @@ def train_models(task_type: str, searchers: Tuple[str, BaseEstimator], X_train, 
     ascending = False if sorted_key == "rmse" else True
     results = sorted(results, key = lambda result: result["metrics"][sorted_key], reverse=ascending)
     
-    save_results_path = kwargs.get("save_results_path")
-    if save_results_path:
-        os.makedirs(os.path.dirname(save_results_path), exist_ok=True)
+    if save_results:
+        os.makedirs(os.path.dirname(save_results_dir), exist_ok=True)
         pd.DataFrame([{
             "name": result["name"],
             "best_parameters": result["best_parameters"],
             **result["metrics"]
-        } for result in results]).to_csv(save_results_path, index=False)
+        } for result in results]).to_csv(os.path.join(save_results_dir, "model_results.csv"), index=False)
     
-    save_models_dir = kwargs.get("save_models_dir")
-    save_best_model = kwargs.get("save_best_model")
-    if save_models_dir:
+    if save_models:
         os.makedirs(os.path.dirname(save_models_dir), exist_ok=True)
         if save_best_model:
             joblib.dump(results[0]["best_estimator"], os.path.join(save_models_dir, f"{results[0]['name']}.joblib"))
@@ -164,14 +159,10 @@ def train_models(task_type: str, searchers: Tuple[str, BaseEstimator], X_train, 
             for result in results:
                 joblib.dump(result["best_estimator"], os.path.join(save_models_dir, f"{result['name']}.joblib"))
     
-    
     return results
 
 
-def rf_parameters(task_type: str, search_type: str, random_state: int = None):
-    if random_state is None:
-        random_state = random.randint(0, 4294967296)
-    
+def rf_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 4294967296)):
     fixed_model_params = {
         'random_state': random_state,
         'bootstrap': True
@@ -199,10 +190,7 @@ def rf_parameters(task_type: str, search_type: str, random_state: int = None):
     return fixed_model_params, search_model_params, searcher_params
 
 
-def ert_parameters(task_type: str, search_type: str, random_state: int = None):
-    if random_state is None:
-        random_state = random.randint(0, 4294967296)
-    
+def ert_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 4294967296)):
     fixed_model_params = {
         'random_state': random_state,
         'bootstrap': True
@@ -230,10 +218,7 @@ def ert_parameters(task_type: str, search_type: str, random_state: int = None):
     return fixed_model_params, search_model_params, searcher_params
 
 
-def gbdt_parameters(task_type: str, search_type: str, random_state: int = None):
-    if random_state is None:
-        random_state = random.randint(0, 4294967296)
-    
+def gbdt_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 4294967296)):
     fixed_model_params = {
         'random_state': random_state
     }
@@ -261,10 +246,7 @@ def gbdt_parameters(task_type: str, search_type: str, random_state: int = None):
     return fixed_model_params, search_model_params, searcher_params
 
 
-def svm_parameters(task_type: str, search_type: str, random_state: int = None):
-    if random_state is None:
-        random_state = random.randint(0, 4294967296)
-    
+def svm_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 4294967296)):
     fixed_model_params = {
         'max_iter': 10000,
         'cache_size': 1000,
@@ -296,10 +278,7 @@ def svm_parameters(task_type: str, search_type: str, random_state: int = None):
     return fixed_model_params, search_model_params, searcher_params
 
 
-def mlp_parameters(task_type: str, search_type: str, random_state: int = None):
-    if random_state is None:
-        random_state = random.randint(0, 4294967296)
-    
+def mlp_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 4294967296)):
     fixed_model_params = {
         'max_iter': 10000,
         'random_state': random_state
@@ -326,10 +305,7 @@ def mlp_parameters(task_type: str, search_type: str, random_state: int = None):
     return fixed_model_params, search_model_params, searcher_params
 
 
-def stack_parameters(task_type: str, search_type: str, random_state: int = None):
-    if random_state is None:
-        random_state = random.randint(0, 4294967296)
-    
+def stack_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 4294967296)):
     is_classifier = task_type == "classification"
 
     fixed_model_params = {}
