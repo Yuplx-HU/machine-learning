@@ -1,16 +1,16 @@
 import os
 import joblib
-import random
 import warnings
 import numpy as np
 import pandas as pd
-from typing import Tuple, Any, Optional
 from dataclasses import dataclass
+from typing import Tuple, Any, Optional
 
 from sklearn.base import clone, BaseEstimator
-from sklearn.model_selection import StratifiedKFold, KFold, GridSearchCV, RandomizedSearchCV
-from sklearn.svm import SVR, SVC
-from sklearn.neural_network import MLPRegressor, MLPClassifier
+from sklearn.model_selection import (
+    StratifiedKFold, KFold,
+    GridSearchCV, RandomizedSearchCV
+)
 from sklearn.ensemble import (
     RandomForestRegressor, RandomForestClassifier,
     ExtraTreesRegressor, ExtraTreesClassifier,
@@ -19,11 +19,8 @@ from sklearn.ensemble import (
     AdaBoostRegressor, AdaBoostClassifier,
     StackingRegressor, StackingClassifier,
 )
-from sklearn.metrics import (
-    make_scorer, root_mean_squared_error, r2_score,
-    accuracy_score, precision_score, recall_score, f1_score,
-    roc_auc_score, mean_absolute_error, mean_squared_error
-)
+from sklearn.svm import SVR, SVC
+from sklearn.neural_network import MLPRegressor, MLPClassifier
 
 from imblearn.over_sampling import (
     RandomOverSampler, SMOTE, BorderlineSMOTE, SVMSMOTE,
@@ -31,6 +28,12 @@ from imblearn.over_sampling import (
 )
 from imblearn.combine import SMOTEENN, SMOTETomek
 from imblearn.under_sampling import RandomUnderSampler
+
+from sklearn.metrics import (
+    make_scorer, root_mean_squared_error, r2_score,
+    accuracy_score, precision_score, recall_score, f1_score,
+    roc_auc_score, mean_absolute_error, mean_squared_error
+)
 
 
 @dataclass
@@ -43,7 +46,6 @@ class ModelResult:
     metrics: dict[str, float]
     cv_score: float
     cv_results: dict[str, Any]
-    fit_time: float
 
 
 def create_estimator(task_type: str, model_type: str, **fixed_model_params):
@@ -85,7 +87,7 @@ def create_scorer(task_type: str):
         raise ValueError("Task type is invalid")
 
 
-def create_cv(task_type: str, n_splits: int = 5, random_state: int = random.randint(0, 2**32-1)):
+def create_cv(task_type: str, n_splits: int = 5, random_state: int = 1412):
     if task_type == "classification":
         return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     else:
@@ -156,7 +158,7 @@ def get_prediction_probabilities(model: BaseEstimator, X):
     return None
 
 
-def create_sampler(sampler_type: str, random_state: int = random.randint(0, 2**32-1)):
+def create_sampler(sampler_type: str, random_state: int = 1412):
     sampler_map = {
         "random_oversample": RandomOverSampler,
         "smote": SMOTE,
