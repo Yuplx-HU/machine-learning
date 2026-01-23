@@ -3,10 +3,10 @@ import numpy as np
 from scipy.stats import loguniform
 from sklearn.base import BaseEstimator
 
-from npt.utils.model_trainer import create_cv, create_scorer, create_estimator
+from npt.utils.machine_learning import create_cv, create_scorer, create_estimator
 
 
-def rf_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 2**32-1)):
+def rf_parameters(task_type: str, search_type: str, random_state: int = 1412):
     fixed_model_params = {
         "random_state": random_state,
         "bootstrap": True,
@@ -35,7 +35,7 @@ def rf_parameters(task_type: str, search_type: str, random_state: int = random.r
     return fixed_model_params, search_model_params, searcher_params
 
 
-def ert_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 2**32-1)):
+def ert_parameters(task_type: str, search_type: str, random_state: int = 1412):
     fixed_model_params = {
         "random_state": random_state,
         "bootstrap": True,
@@ -64,7 +64,7 @@ def ert_parameters(task_type: str, search_type: str, random_state: int = random.
     return fixed_model_params, search_model_params, searcher_params
 
 
-def gbdt_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 2**32-1)):
+def gbdt_parameters(task_type: str, search_type: str, random_state: int = 1412):
     fixed_model_params = {
         "random_state": random_state,
     }
@@ -93,7 +93,7 @@ def gbdt_parameters(task_type: str, search_type: str, random_state: int = random
     return fixed_model_params, search_model_params, searcher_params
 
 
-def svm_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 2**32-1)):
+def svm_parameters(task_type: str, search_type: str, random_state: int = 1412):
     fixed_model_params = {
         "max_iter": 10000,
         "cache_size": 1000,
@@ -127,7 +127,7 @@ def svm_parameters(task_type: str, search_type: str, random_state: int = random.
     return fixed_model_params, search_model_params, searcher_params
 
 
-def mlp_parameters(task_type: str, search_type: str, random_state: int = random.randint(0, 2**32-1)):
+def mlp_parameters(task_type: str, search_type: str, random_state: int = 1412):
     fixed_model_params = {
         "max_iter": 10000,
         "random_state": random_state,
@@ -159,7 +159,7 @@ def mlp_parameters(task_type: str, search_type: str, random_state: int = random.
 
 def vote_parameters(task_type: str, search_type: str,
                     weight_count: int, estmators: list[BaseEstimator],
-                    random_state: int = random.randint(0, 2**32-1)):
+                    random_state: int = 1412):
     fixed_model_params = {
         "estimators": estmators,
     }
@@ -167,7 +167,7 @@ def vote_parameters(task_type: str, search_type: str,
     rng = random.Random(random_state)
     search_model_params = {
         "voting": ["hard", "soft"] if task_type == "classification" else ["hard"],
-        "weights": [[rng.uniform(0.1, 10.0) for _ in range(weight_count)] for _ in range(200)],
+        "weights": [[rng.uniform(0.1, 10.0) for _ in range(weight_count)] for _ in range(250)],
         "flatten_transform": [True, False] if task_type == "classification" else [True],
     }
     
@@ -188,7 +188,7 @@ def vote_parameters(task_type: str, search_type: str,
 
 def adaboost_parameters(task_type: str, search_type: str,
                         estimator: BaseEstimator, search_estimator_params: dict = {},
-                        random_state: int = random.randint(0, 2**32-1)):
+                        random_state: int = 1412):
     fixed_model_params = {
         "random_state": random_state,
         "estimator": estimator,
@@ -220,7 +220,7 @@ def stack_parameters(task_type: str,
                      search_type: str,
                      estimators: list[tuple[str, BaseEstimator]],
                      final_estimator_type: str,
-                     random_state: int = random.randint(0, 2**32-1)):
+                     random_state: int = 1412):
     parameter_map = {
         "rf": rf_parameters,
         "ert": ert_parameters,
